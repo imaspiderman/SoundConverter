@@ -1,3 +1,5 @@
+import java.util.Collections;
+
 import javax.sound.midi.*;
 import javax.sound.sampled.*;
 
@@ -5,35 +7,102 @@ public class soundconverter {
 	/**
 	 * @param args
 	 */
+	private static java.util.ArrayList<MidiEvent> _combinedTrack;
+	
 	public static void main(String[] args) {
-		if(args.length <1 || args.length > 2){
-			System.out.println("usage soundconverter <filename>");
-			return;
-		}
+		String sFile = "";
+		_combinedTrack = new java.util.ArrayList<MidiEvent>();
 		int track = -1;
-		if(args.length == 2) track = Integer.parseInt(args[1]);
-		if(args[0].toLowerCase().indexOf(".wav")!=-1) ParseSampledData(args[0]);
-		if(args[0].toLowerCase().indexOf(".mid")!=-1) ParseMidiData(args[0],track);
+		boolean bCombine = false;
+		//Parse command line arguments
+		try{
+			for(int a=0; a<args.length; a++){
+				if(args[a].indexOf('-') != -1){
+					if(args[a].equalsIgnoreCase("-f")) sFile = args[a+1];
+					if(args[a].equalsIgnoreCase("-t")) track = Integer.parseInt(args[a+1]);
+					if(args[a].equalsIgnoreCase("-h")) {ShowUsage(); return;}
+					if(args[a].equalsIgnoreCase("-c")) bCombine = true; 
+				}
+			}
+		}catch(Exception e){
+			ShowUsage();
+		}
+		
+		if(sFile.toLowerCase().indexOf(".wav")!=-1) ParseSampledData(sFile);
+		if(sFile.toLowerCase().indexOf(".mid")!=-1) ParseMidiData(sFile,track,bCombine);
 	}
 	
+	private static void ShowUsage(){
+		System.out.println("soundconverter is a program to convert wav and midi files into");
+		System.out.println("usable c code for the Virtual Boy Game System. The timings and");
+		System.out.println("calculations used in this program have been preset to the VB's specs.");
+		System.out.println("This program writes it's text output to standard out so you'll need to");
+		System.out.println("redirect the output to a file if you want it saved. The paranthesis are");
+		System.out.println("needed in Linux since the java program will read > as a paramter otherwise.");
+		System.out.println("Example: (java soundconverter -f mymusicfile.mid) > outputfile.txt");
+		System.out.println("Feel free to modify this program to meet you're needs.");
+		System.out.println("");
+		System.out.println("Usage: java soundconverter -{param} {param value}");
+		System.out.println("  Params: (x=alphanumeric, n=numeric");
+		System.out.println("  -f {x..} =         File name and path to convert");
+		System.out.println("  -t {n..} =         Track number to play and convert");
+		System.out.println("  -h       =         Show this help menu");
+	}
+	
+	/**
+	 * This function will order all the events by tick position
+	 * @param s The sequence containing all the tracks
+	 */
+	private static void CombineTracks(Sequence s){
+		Track[] tracks = s.getTracks();
+		for(int t=0; t<tracks.length; t++){
+			int numEvents = tracks[t].size();
+			for(int e=0; e<numEvents; e++){
+				_combinedTrack.add(tracks[t].get(e));
+			}
+		}
+		//Sort List
+		Collections.sort(_combinedTrack, new java.util.Comparator<MidiEvent>(){
+			@Override
+			public int compare(MidiEvent arg0, MidiEvent arg1) {
+				return (int)(arg0.getTick() - arg1.getTick());
+			}
+			
+		});
+		
+		System.out.println("Total Events: " + _combinedTrack.size());
+	}
 	/**
 	 * This function does the MIDI audio parsing and information displays
 	 * @param sFile The file name of a MIDI file
 	 */
-	private static void ParseMidiData(String sFile,int track){
+	private static void ParseMidiData(String sFile,int track, boolean combine){
 		try{
 			java.io.File i = new java.io.File(sFile);
 			Sequence s = MidiSystem.getSequence(i);
 			ShowMidiInfo(s);
-			ParseData(s);
-			
-			Sequencer seq = MidiSystem.getSequencer();
-			seq.open();
-			seq.setSequence(s);
-			for(int tr=0; tr<s.getTracks().length; tr++){
-				if(tr != track)	seq.setTrackMute(tr, true);
+			if(combine){
+				CombineTracks(s);
+				//Delete all current tracks
+				while(s.getTracks().length > 0){
+					s.deleteTrack(s.getTracks()[0]);
+				}
+				//Add in the new track
+				Track newT = s.createTrack();
+				for(int e=0; e<_combinedTrack.size(); e++){
+					newT.add(_combinedTrack.get(e));
+				}
 			}
-			seq.start();
+			ParseData(s);
+			if(track != -1){
+				Sequencer seq = MidiSystem.getSequencer();
+				seq.open();
+				seq.setSequence(s);
+				for(int tr=0; tr<s.getTracks().length; tr++){
+					if(tr != track)	seq.setTrackMute(tr, true);
+				}
+				seq.start();
+			}
 			
 		}catch(Exception e){
 			e.printStackTrace();
@@ -172,20 +241,15 @@ public class soundconverter {
 						)
 					)
 				);
-			//System.out.println("Resolution:                    " + s.getResolution());
 			System.out.println("Number of tracks:              " + s.getTracks().length);
 			System.out.println("Number of patches:             " + s.getPatchList().length);
-			//System.out.println("Total length of sequence:      " + seq.getMicrosecondLength());
 			System.out.println("Total length in Ticks:         " + seq.getTickLength());
 			System.out.println("Tempo factor:                  " + seq.getTempoFactor());
 			System.out.println("Tempo beats per minute:        " + seq.getTempoInBPM());
-			//System.out.println("Tempo micro secs per qtr Note: " + seq.getTempoInMPQ());
 			double ticksPerSecond = (s.getResolution() * (seq.getTempoInBPM()/60));
-			//double tickSize = 1/ticksPerSecond;
 			System.out.println("Ticks per second:              " + ticksPerSecond);
 			System.out.println("20us clock interrupt:          " + 50000/ticksPerSecond);
 			System.out.println("100us clock interrupt:         " + 10000/ticksPerSecond);
-			//System.out.println("Tick size:                     " + tickSize);
 			System.out.println("*/");
 		}catch(Exception e){
 			e.printStackTrace();
