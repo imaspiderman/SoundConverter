@@ -6,31 +6,35 @@ public class soundconverter {
 	 * @param args
 	 */
 	public static void main(String[] args) {
-		if(args.length != 1){
+		if(args.length <1 || args.length > 2){
 			System.out.println("usage soundconverter <filename>");
 			return;
 		}
-		
+		int track = -1;
+		if(args.length == 2) track = Integer.parseInt(args[1]);
 		if(args[0].toLowerCase().indexOf(".wav")!=-1) ParseSampledData(args[0]);
-		if(args[0].toLowerCase().indexOf(".mid")!=-1) ParseMidiData(args[0]);
+		if(args[0].toLowerCase().indexOf(".mid")!=-1) ParseMidiData(args[0],track);
 	}
 	
 	/**
 	 * This function does the MIDI audio parsing and information displays
 	 * @param sFile The file name of a MIDI file
 	 */
-	private static void ParseMidiData(String sFile){
+	private static void ParseMidiData(String sFile,int track){
 		try{
 			java.io.File i = new java.io.File(sFile);
 			Sequence s = MidiSystem.getSequence(i);
 			ShowMidiInfo(s);
 			ParseData(s);
-			/*
+			
 			Sequencer seq = MidiSystem.getSequencer();
 			seq.open();
 			seq.setSequence(s);
+			for(int tr=0; tr<s.getTracks().length; tr++){
+				if(tr != track)	seq.setTrackMute(tr, true);
+			}
 			seq.start();
-			*/
+			
 		}catch(Exception e){
 			e.printStackTrace();
 		}
@@ -125,7 +129,7 @@ public class soundconverter {
 					}
 				}
 			}
-			sb.append(",{0xFFFFFFFF,0x00,0x00} //Ending byte\n");
+			sb.append(",{0x09,0xFFFFFFFF,0x00,0x00} //Ending byte\n");
 			sb.append("};\n\n");
 		}
 		
@@ -140,6 +144,7 @@ public class soundconverter {
 	private static boolean validMessage(MidiMessage m){
 		boolean r = false;
 		if((m.getStatus()>>4) == MidiStatus.NOTE_ON) r = true;
+		if((m.getStatus()>>4) == MidiStatus.NOTE_OFF) r = true;
 		if((m.getStatus()>>4) == MidiStatus.PROGRAM_CHANGE) r = true;
 		return r;
 	}
