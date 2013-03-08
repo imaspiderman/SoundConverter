@@ -16,6 +16,7 @@ public class soundconverter {
 		_tracks = new java.util.ArrayList<Integer>();
 		boolean bCombine = false;
 		boolean bJustPlay = false;
+		boolean bJustInfo = false;
 		//Parse command line arguments
 		try{
 			for(int a=0; a<args.length; a++){
@@ -29,15 +30,16 @@ public class soundconverter {
 					}
 					if(args[a].equalsIgnoreCase("-p")) bJustPlay = true;
 					if(args[a].equalsIgnoreCase("-h")) {ShowUsage(); return;}
-					if(args[a].equalsIgnoreCase("-c")) bCombine = true; 
+					if(args[a].equalsIgnoreCase("-c")) bCombine = true;
+					if(args[a].equalsIgnoreCase("-i")) bJustInfo = true;
 				}
 			}
 		}catch(Exception e){
 			ShowUsage();
 		}
 		
-		if(sFile.toLowerCase().indexOf(".wav")!=-1) ParseSampledData(sFile);
-		if(sFile.toLowerCase().indexOf(".mid")!=-1) ParseMidiData(sFile,bCombine,bJustPlay);
+		if(sFile.toLowerCase().indexOf(".wav")!=-1) ParseSampledData(sFile,bJustInfo,bJustPlay);
+		if(sFile.toLowerCase().indexOf(".mid")!=-1) ParseMidiData(sFile,bCombine,bJustPlay,bJustInfo);
 	}
 	
 	private static void ShowUsage(){
@@ -53,6 +55,7 @@ public class soundconverter {
 		System.out.println("Usage: java soundconverter -{param} {param value}");
 		System.out.println("  Params: (x=alphanumeric, n=numeric");
 		System.out.println("  -f {x..} =         File name and path to convert");
+		System.out.println("  -i       =         Show file information");
 		System.out.println("  -p       =         Play file. Can be combined with -t to only play certain tracks");
 		System.out.println("  -t {n..} =         Track number to play and/or convert");
 		System.out.println("  -h       =         Show this help menu");
@@ -122,12 +125,16 @@ public class soundconverter {
 	 * This function does the MIDI audio parsing and information displays
 	 * @param sFile The file name of a MIDI file
 	 */
-	private static void ParseMidiData(String sFile, boolean combine, boolean justPlay){
+	private static void ParseMidiData(String sFile, boolean combine, boolean justPlay, boolean justInfo){
 		try{
 			java.io.File i = new java.io.File(sFile);
 			Sequence s = MidiSystem.getSequence(i);
 			if(justPlay){
 				PlayFile(s,_tracks); 
+				return;
+			}
+			if(justInfo){
+				ShowMidiInfo(s);
 				return;
 			}
 			ShowMidiInfo(s);
@@ -153,16 +160,40 @@ public class soundconverter {
 	 * This function does the sampled audio parsing and information displays
 	 * @param sFile The filename of a WAV file to be parsed
 	 */
-	private static void ParseSampledData(String sFile){
+	private static void ParseSampledData(String sFile,boolean justInfo,boolean justPlay){
 		try {
 			java.io.File i = new java.io.File(sFile);
 			AudioInputStream a = AudioSystem.getAudioInputStream(i);
 			AudioFormat f = a.getFormat();
-			
+			if(justInfo){
+				ShowSampledInfo(f);
+				return;
+			}
+			if(justPlay){
+				PlaySampleData(a);
+				return;
+			}
 			ShowSampledInfo(f);
 			ParseData(a);
 			
 		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	private static void PlaySampleData(AudioInputStream a){
+		try {
+			SourceDataLine l = AudioSystem.getSourceDataLine(a.getFormat());
+			l.open();
+			l.start();
+			byte[] buffer = new byte[1024];
+			while(a.read(buffer)>-1){
+				l.write(buffer, 0, 1024);
+			}
+			l.drain();
+			l.close();
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 	}
@@ -206,6 +237,14 @@ public class soundconverter {
 		sb.append("\tu8  note;\n");
 		sb.append("\tu8  volume;\n");
 		sb.append("} midiNote;\n");
+		sb.append("\n");
+		sb.append("typedef struct{\n");
+		sb.append("\tu32 currNote;\n");
+		sb.append("\tconst midiNote* data;\n");
+		sb.append("\tu8 play;\n");
+		sb.append("\tu16 offNote;\n");
+		sb.append("\tu8 volume;\n");
+		sb.append("} midiTrack;\n");
 		boolean bValidTrack = false;
 		for(int t=0; t<tracks.length; t++){
 			if(_tracks.size()==0) bValidTrack = true;
@@ -247,7 +286,7 @@ public class soundconverter {
 					}
 				}
 			}
-			sb.append(",{0x09,0xFFFFFFFF,0x00,0x00} //Ending byte\n");
+			sb.append(",{0x00,0xFFFFFFFF,0x00,0x00} //Ending byte\n");
 			sb.append("};\n\n");
 		}
 		
@@ -299,6 +338,17 @@ public class soundconverter {
 			System.out.println("Ticks per second:              " + ticksPerSecond);
 			System.out.println("20us clock interrupt:          " + 50000/ticksPerSecond);
 			System.out.println("100us clock interrupt:         " + 10000/ticksPerSecond);
+			Track[] tracks = s.getTracks();
+			MidiMessage mess;
+			for(int i=0; i< tracks.length; i++){
+				for(int m=0; m<tracks[i].size(); m++){
+					mess = tracks[i].get(m).getMessage();
+					if((mess.getStatus()>>4) == MidiStatus.PROGRAM_CHANGE){
+						System.out.println("Track "+i+". " + MidiSystem.getSynthesizer().getAvailableInstruments()[mess.getMessage()[1]].getName());
+						continue;
+					}
+				}
+			}
 			System.out.println("*/");
 		}catch(Exception e){
 			e.printStackTrace();
